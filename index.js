@@ -12,19 +12,6 @@ const fs = require('fs');
 const { createCanvas } = require('canvas');
 const obelisk = require('./obelisk-nodeshim')(() => createCanvas(worldWidth, worldHeight));
 
-// create view instance to nest everything
-const canvas = createCanvas(worldWidth, worldHeight);
-const point = new obelisk.Point(worldWidth / 2, worldHeight / 2);
-const pixelView = new obelisk.PixelView(canvas, point);
-
-// create cube dimension and color instance
-const dimension = new obelisk.CubeDimension(pixelWidth, pixelHeight, pixelDepth);
-const actionsServiceBlue = 0x0000FF;
-const color = new obelisk.CubeColor().getByHorizontalColor(actionsServiceBlue);
-
-// build cube with dimension and color instance
-const cube = new obelisk.Cube(dimension, color, true);
-
 const isInCircle = (x,y) => {
     const distToOrigin = Math.sqrt(x*x + y*y);
     return distToOrigin < circleRadius;
@@ -56,6 +43,57 @@ const isInPlayTriangle = (x,y) => {
     return !(has_neg && has_pos);
 };
 
+const getColor = (x,y) => {
+    // Map x,y to circle (i.e. the HSV space)
+    let theta = Math.atan(y/x);
+    if (isNaN(theta)) {
+        return 0x000000;
+    }
+    // account for negative inputs based on quadrant
+    if (x < 0 && y > 0) {
+        // quadrant 2
+        theta += Math.PI;
+    }
+    if (x < 0 && y < 0) {
+        // quadrant 3
+        theta += Math.PI;
+    }
+    if (x > 0 && y < 0) {
+        // quadrant 4
+        theta += 2*Math.PI;
+    }
+
+    let r = Math.sqrt(x*x + y*y);
+    const unitR = r / circleRadius;
+
+    // Theta is hue, unitR is saturation.  We'll use a value of 1 for white
+    let h = theta * 180 / Math.PI;
+    const value = 1;
+    const saturation = unitR;
+
+    // flip h to match the color order in our logo
+    h = 360 - h;
+    // rotate colors to align yellow with tip of arrow
+    h = (h - 45) % 360;
+
+    const f = (n) => {
+        const k = (n + h / 60) % 6;
+        return value - (value * saturation * Math.max(0, Math.min(k, 4-k, 1)));
+    };
+
+    return Math.trunc(f(5) * 255) * Math.pow(2, 16) +
+        Math.trunc(f(3) * 255) * Math.pow(2, 8) +
+        Math.trunc(f(1) * 255);
+}
+
+// create view instance to nest everything
+const canvas = createCanvas(worldWidth, worldHeight);
+const point = new obelisk.Point(worldWidth / 2, worldHeight / 2);
+const pixelView = new obelisk.PixelView(canvas, point);
+
+// create cube dimension and color instance
+const dimension = new obelisk.CubeDimension(pixelWidth, pixelHeight, pixelDepth);
+
 // Start drawing
 const halfHeight = worldHeight / 2;
 const halfWidth = worldWidth / 2;
@@ -65,6 +103,19 @@ for (let i = -halfWidth; i < halfWidth; i += pixelWidth) {
         const x = i + pixelWidth / 2;
         const y = j + pixelHeight / 2;
         if (isInCircle(x,y) && !isInPlayTriangle(x,y)) {
+            const color = getColor(x,y);
+            //const color = new obelisk.CubeColor().getByHorizontalColor(color);
+            const cubeColor = new obelisk.CubeColor(
+                obelisk.ColorGeom.applyBrightness(color, -80),      // border
+                obelisk.ColorGeom.applyBrightness(color, 0, false),  // border highlight
+                obelisk.ColorGeom.applyBrightness(color, -40),      // left
+                obelisk.ColorGeom.applyBrightness(color, -20),      // right
+                color                                       // top
+            );
+
+            // build cube with dimension and color instance
+            const cube = new obelisk.Cube(dimension, cubeColor, true);
+
             const pixelPoint = new obelisk.Point3D(i, j, 0);
             pixelView.renderObject(cube, pixelPoint);
         }
